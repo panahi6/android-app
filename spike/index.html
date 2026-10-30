@@ -1,0 +1,136 @@
+<!doctype html>
+<!-- THROWAWAY TEST PAGE: checks Hebrew speech recognition + trigger word on the phone. Not the real app. -->
+<html lang="he" dir="rtl">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>בדיקת פתקים קוליים</title>
+<style>
+  body { font-family: system-ui, sans-serif; margin: 0; padding: 16px; background: #fff; color: #111; }
+  button { font-size: 1.2rem; padding: 14px; margin: 4px 0; width: 100%; border-radius: 10px; border: 1px solid #888; }
+  #toggle.on { background: #c62828; color: #fff; }
+  #status { margin: 8px 0; color: #555; }
+  li { margin: 6px 0; }
+  .time { color: #777; font-variant-numeric: tabular-nums; margin-left: 8px; }
+  #heard { font-size: .85rem; color: #666; }
+</style>
+</head>
+<body>
+<h2>פתקים קוליים (בדיקה)</h2>
+<p>אמרי "תרשום" ואז את מה שקרה, למשל: "תרשום, הוא מחא כפיים".</p>
+<button id="toggle">התחל להקשיב</button>
+<div id="status">כבוי</div>
+<h3>פתקים</h3>
+<ol id="notes"></ol>
+<button id="share">שתף / הורד פתקים</button>
+<button id="clear">מחק הכל</button>
+<h4>מה שנשמע (לבדיקה)</h4>
+<ul id="heard"></ul>
+
+<script>
+const TRIGGER = /תרשו?ם|תרשמי/; // what the recognizer may write for "תרשום"
+const notes = JSON.parse(localStorage.getItem('notes') || '[]');
+let listening = false, waitingForNote = false, restarts = 0, wakeLock = null;
+
+const $ = id => document.getElementById(id);
+const time = d => new Date(d).toLocaleTimeString('he-IL');
+
+function render() {
+  $('notes').innerHTML = '';
+  for (const n of notes) {
+    const li = document.createElement('li');
+    li.innerHTML = `<span class="time">${time(n.t)}</span>`;
+    li.append(n.text);
+    $('notes').append(li);
+  }
+}
+
+function save(text) {
+  notes.push({ t: Date.now(), text });
+  localStorage.setItem('notes', JSON.stringify(notes)); // survives a refresh or crash
+  render();
+}
+
+function onHeard(text) {
+  const li = document.createElement('li');
+  li.textContent = `${time(Date.now())} ${text}`;
+  $('heard').prepend(li);
+  const m = text.match(TRIGGER);
+  if (m) {
+    const after = text.slice(m.index + m[0].length).replace(/^[\s,.:-]+/, '').trim();
+    if (after) save(after); else waitingForNote = true; // she paused after the trigger word
+  } else if (waitingForNote) {
+    save(text.trim());
+    waitingForNote = false;
+  }
+}
+
+const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
+const rec = SR && new SR();
+if (!rec) $('status').textContent = 'הדפדפן לא תומך בזיהוי דיבור. פתחי ב-Chrome.';
+else {
+  rec.lang = 'he-IL';
+  rec.continuous = true;
+  rec.interimResults = false;
+  rec.onresult = e => {
+    for (let i = e.resultIndex; i < e.results.length; i++)
+      if (e.results[i].isFinal) onHeard(e.results[i][0].transcript);
+  };
+  rec.onerror = e => {
+    if (e.error === 'not-allowed') { stop(); $('status').textContent = 'אין הרשאה למיקרופון'; }
+  };
+  // Android stops listening after silence; start again while still "on"
+  rec.onend = () => {
+    if (!listening) return;
+    restarts++;
+    $('status').textContent = `מקשיב... (הופעל מחדש ${restarts} פעמים)`;
+    try { rec.start(); } catch {}
+  };
+}
+
+async function keepScreenOn() {
+  try { wakeLock = await navigator.wakeLock.request('screen'); } catch {}
+}
+document.addEventListener('visibilitychange', () => {
+  if (listening && document.visibilityState === 'visible') keepScreenOn();
+});
+
+function start() {
+  listening = true;
+  $('toggle').textContent = 'עצור';
+  $('toggle').classList.add('on');
+  $('status').textContent = 'מקשיב...';
+  rec.start();
+  keepScreenOn();
+}
+function stop() {
+  listening = false;
+  $('toggle').textContent = 'התחל להקשיב';
+  $('toggle').classList.remove('on');
+  $('status').textContent = 'כבוי';
+  rec.stop();
+  wakeLock?.release();
+}
+
+$('toggle').onclick = () => rec && (listening ? stop() : start());
+
+$('share').onclick = async () => {
+  const text = notes.map(n => `${time(n.t)} - ${n.text}`).join('\n');
+  if (navigator.share) { try { await navigator.share({ title: 'פתקים', text }); return; } catch {} }
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(new Blob([text], { type: 'text/plain' }));
+  a.download = `notes-${new Date().toISOString().slice(0, 10)}.txt`;
+  a.click();
+};
+
+$('clear').onclick = () => {
+  if (!confirm('למחוק את כל הפתקים?')) return;
+  notes.length = 0;
+  localStorage.removeItem('notes');
+  render();
+};
+
+render();
+</script>
+</body>
+</html>
