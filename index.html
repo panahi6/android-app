@@ -1,10 +1,13 @@
 <!doctype html>
-<!-- THROWAWAY TEST PAGE: checks Hebrew speech recognition + trigger word on the phone. Not the real app. -->
+<!-- Voice notes: listens in Hebrew, saves what is said after "תרשום" with the time. -->
 <html lang="he" dir="rtl">
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>בדיקת פתקים קוליים</title>
+<meta name="theme-color" content="#5e35b1">
+<link rel="manifest" href="manifest.json">
+<link rel="icon" href="icon-192.png">
+<title>פתקים קוליים</title>
 <style>
   body { font-family: system-ui, sans-serif; margin: 0; padding: 16px; background: #fff; color: #111; }
   button { font-size: 1.2rem; padding: 14px; margin: 4px 0; width: 100%; border-radius: 10px; border: 1px solid #888; }
@@ -16,7 +19,7 @@
 </style>
 </head>
 <body>
-<h2>פתקים קוליים (בדיקה)</h2>
+<h2>פתקים קוליים</h2>
 <p>אמרי "תרשום" ואז את מה שקרה, למשל: "תרשום, הוא מחא כפיים".</p>
 <button id="toggle">התחל להקשיב</button>
 <div id="status">כבוי</div>
@@ -24,13 +27,15 @@
 <ol id="notes"></ol>
 <button id="share">שתף / הורד פתקים</button>
 <button id="clear">מחק הכל</button>
-<h4>מה שנשמע (לבדיקה)</h4>
-<ul id="heard"></ul>
+<details>
+  <summary>מה שנשמע</summary>
+  <ul id="heard"></ul>
+</details>
 
 <script>
 const TRIGGER = /תרשו?ם|תרשמי/; // what the recognizer may write for "תרשום"
 const notes = JSON.parse(localStorage.getItem('notes') || '[]');
-let listening = false, waitingForNote = false, restarts = 0, wakeLock = null;
+let listening = false, waitingForNote = false, wakeLock = null;
 
 const $ = id => document.getElementById(id);
 const time = d => new Date(d).toLocaleTimeString('he-IL');
@@ -82,8 +87,6 @@ else {
   // Android stops listening after silence; start again while still "on"
   rec.onend = () => {
     if (!listening) return;
-    restarts++;
-    $('status').textContent = `מקשיב... (הופעל מחדש ${restarts} פעמים)`;
     try { rec.start(); } catch {}
   };
 }
@@ -115,7 +118,7 @@ function stop() {
 $('toggle').onclick = () => rec && (listening ? stop() : start());
 
 $('share').onclick = async () => {
-  const text = notes.map(n => `${time(n.t)} - ${n.text}`).join('\n');
+  const text = notes.map(n => `${new Date(n.t).toLocaleDateString('he-IL')} ${time(n.t)} - ${n.text}`).join('\n');
   if (navigator.share) { try { await navigator.share({ title: 'פתקים', text }); return; } catch {} }
   const a = document.createElement('a');
   a.href = URL.createObjectURL(new Blob([text], { type: 'text/plain' }));
