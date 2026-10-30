@@ -45,7 +45,7 @@ const NOTE_SECONDS = 2; // how long to keep listening after "תרשום" is caug
 const notes = JSON.parse(localStorage.getItem('notes') || '[]');
 const heard = JSON.parse(localStorage.getItem('heard') || '[]'); // full transcript, for backup
 let listening = false, waitingUntil = 0, wakeLock = null;
-let lastInterim = '', catchTimer = null, cueTimer = null, startedAt = 0, clockTimer = null;
+let sentence = '', catchTimer = null, cueTimer = null, startedAt = 0, clockTimer = null;
 
 const $ = id => document.getElementById(id);
 const time = d => new Date(d).toLocaleTimeString('he-IL');
@@ -99,7 +99,7 @@ const clean = s => s.replace(/^[\s,.:-]+/, '').trim();
 function startCatch() {
   cue('catching', '✍️ רושם...');
   navigator.vibrate?.(150);
-  catchTimer = setTimeout(() => rec.stop(), NOTE_SECONDS * 1000); // stop() turns what was said so far into a final result
+  catchTimer = setTimeout(() => rec.stop(), NOTE_SECONDS * 1000); // ends the round, so onend saves what was said so far
 }
 function endCatch() {
   clearTimeout(catchTimer);
@@ -112,24 +112,21 @@ const rec = SR && new SR();
 if (!rec) $('status').textContent = 'הדפדפן לא תומך בזיהוי דיבור. פתחי ב-Chrome.';
 else {
   rec.lang = 'he-IL';
-  rec.continuous = true;
+  // One sentence per listening round. Android marks every partial as "final" and repeats it as the sentence grows,
+  // so we only keep the latest text and save it once, when the round ends (onend).
+  rec.continuous = false;
   rec.interimResults = true; // partial text arrives while she speaks, so the cue shows right away
   rec.onresult = e => {
-    let interim = '', gotFinal = false;
-    for (let i = e.resultIndex; i < e.results.length; i++) {
-      const text = e.results[i][0].transcript;
-      if (e.results[i].isFinal) { onHeard(text); gotFinal = true; } else interim += text;
-    }
-    if (gotFinal) endCatch();
-    lastInterim = interim;
-    if (interim && !catchTimer && (TRIGGER.test(interim) || Date.now() < waitingUntil)) startCatch();
+    const text = e.results[e.results.length - 1][0].transcript;
+    if (text.trim()) sentence = text;
+    if (sentence && !catchTimer && (TRIGGER.test(sentence) || Date.now() < waitingUntil)) startCatch();
   };
   rec.onerror = e => {
     if (e.error === 'not-allowed') { stop(); $('status').textContent = 'אין הרשאה למיקרופון'; }
   };
-  // Android stops listening after silence; start again while still "on"
+  // the round ended (pause, silence or the 2-second cut): save the sentence, then listen again while still "on"
   rec.onend = () => {
-    if (lastInterim) { onHeard(lastInterim); lastInterim = ''; } // never lose words that did not become final
+    if (sentence) { onHeard(sentence); sentence = ''; }
     endCatch();
     if (!listening) return;
     try { rec.start(); } catch {}
