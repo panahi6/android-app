@@ -60,15 +60,17 @@ function onHeard(text) {
   const li = document.createElement('li');
   li.textContent = `${time(Date.now())} ${text}`;
   $('heard').prepend(li);
-  const m = text.match(TRIGGER);
-  if (m) {
-    const after = text.slice(m.index + m[0].length).replace(/^[\s,.:-]+/, '').trim();
-    if (after) save(after); else waitingForNote = true; // she paused after the trigger word
-  } else if (waitingForNote) {
-    save(text.trim());
-    waitingForNote = false;
+  // one sentence can hold several "תרשום ..." notes; the part before the first one only counts if she paused after the trigger
+  const [before, ...after] = text.split(TRIGGER);
+  if (waitingForNote && clean(before)) save(clean(before));
+  waitingForNote = false;
+  for (const part of after) {
+    const note = clean(part);
+    if (note) save(note);
+    waitingForNote = !note;
   }
 }
+const clean = s => s.replace(/^[\s,.:-]+/, '').trim();
 
 const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
 const rec = SR && new SR();
@@ -118,7 +120,7 @@ function stop() {
 $('toggle').onclick = () => rec && (listening ? stop() : start());
 
 $('share').onclick = async () => {
-  const text = notes.map(n => `${new Date(n.t).toLocaleDateString('he-IL')} ${time(n.t)} - ${n.text}`).join('\n');
+  const text = notes.map(n => `${time(n.t)} - ${n.text}`).join('\n');
   if (navigator.share) { try { await navigator.share({ title: 'פתקים', text }); return; } catch {} }
   const a = document.createElement('a');
   a.href = URL.createObjectURL(new Blob([text], { type: 'text/plain' }));
